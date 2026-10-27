@@ -182,10 +182,16 @@ AMY_IRAM_ATTR SAMPLE compute_breakpoint_scale(uint16_t osc, uint8_t bp_set, uint
                 // same way v0/v1 are floored in the decay branch below.
                 SAMPLE mapped_current_level = MAX(F2S(MAP_ATTACK_LEVEL_S(LINEAR_SAMP_TO_DX7_LEVEL(v0))), F2S(BREAKPOINT_EPS));
                 SAMPLE mapped_target_level = MAX(F2S(MAP_ATTACK_LEVEL_S(LINEAR_SAMP_TO_DX7_LEVEL(v1))), F2S(BREAKPOINT_EPS));
-                float t_const = (t1 - t0) / S2F(log2_lut(mapped_current_level) - log2_lut(mapped_target_level));
-                float my_t0 = -t_const * S2F(log2_lut(mapped_current_level));
-                // This is the magic equation that shapes the DX7 attack envelopes.
-                scale = DX7_LEVEL_TO_LINEAR_SAMP(MIN_LEVEL_S + ATTACK_RANGE_S * S2F(F2S(1.0f) - exp2_lut(-F2S((my_t0 + elapsed)/t_const))));
+                if (mapped_current_level == mapped_target_level) {
+                    // Low DX7 levels can map to the same attack coordinate.
+                    // Interpolate the small rise instead of dividing by zero.
+                    scale = v0 + MUL4_SS(v1 - v0, F2S(time_ratio));
+                } else {
+                    float t_const = (t1 - t0) / S2F(log2_lut(mapped_current_level) - log2_lut(mapped_target_level));
+                    float my_t0 = -t_const * S2F(log2_lut(mapped_current_level));
+                    // This is the magic equation that shapes the DX7 attack envelopes.
+                    scale = DX7_LEVEL_TO_LINEAR_SAMP(MIN_LEVEL_S + ATTACK_RANGE_S * S2F(F2S(1.0f) - exp2_lut(-F2S((my_t0 + elapsed)/t_const))));
+                }
             } else {
                 // TRUE_EXPONENTIAL or DX7 Decay (which is also regular true_exponential)
                 v0 = MAX(v0, F2S(BREAKPOINT_EPS));

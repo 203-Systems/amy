@@ -451,6 +451,15 @@ typedef int amy_err_t;
 
 #include "amy_fixedpoint.h"
 
+// Extreme FM levels must not rely on platform-dependent float-to-int overflow.
+static inline SAMPLE amy_amp_to_sample(float amp) {
+    if (!(amp > 0.0f)) return 0;
+#ifdef AMY_USE_FIXEDPOINT
+    if (amp >= 256.0f) return F2S(0x1.fffffep7f);
+#endif
+    return F2S(amp);
+}
+
 #if defined ARDUINO && !defined TLONG && !defined ESP_PLATFORM
 #include "avr/pgmspace.h" // for PROGMEM, DMAMEM, FASTRUN
 #else

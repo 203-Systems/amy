@@ -658,12 +658,16 @@ float logfreq_of_freq(float freq) {
     // Negative frequencies (possible from wire messages) get the same
     // treatment; log2 of them is undefined.
     if (freq<=0) return 0;  // i.e. == logfreq_of_freq(ZERO_LOGFREQ_IN_HZ).
+    // The LUT's Q23 argument cannot hold freq / (4 * 440) >= 256.
+    if (freq >= 1024.0f * ZERO_LOGFREQ_IN_HZ) return log2f(freq / ZERO_LOGFREQ_IN_HZ);
     //return log2f(freq / ZERO_LOGFREQ_IN_HZ);
     return 2.0f + S2F(log2_lut(F2S(freq / (4 * ZERO_LOGFREQ_IN_HZ))));
 }
 
 float freq_of_logfreq(float logfreq) {
     if (logfreq==ZERO_HZ_LOG_VAL) return 0;
+    // Keep the fast LUT for normal notes; high FM ratios need a wider result.
+    if (logfreq >= 10.0f) return ZERO_LOGFREQ_IN_HZ * exp2f(logfreq);
     //return ZERO_LOGFREQ_IN_HZ * exp2f(logfreq);
     // Use fixed-point, but max val is 256 (which is 112 kHz after multiplying by 440), so scale down by 4.
     return (4 * ZERO_LOGFREQ_IN_HZ) * S2F(exp2_lut(F2S(logfreq - 2.0f)));
@@ -2261,6 +2265,9 @@ float combine_controls(float *controls, float *coefs) {
 
 float amp_combine_controls(float *controls, float *coefs) {
     // Linear combination of amp coefs is then mapped so that 0 -> 0.001 and 1 -> 1 exponentially.
+    // CONST is the linear level, not an optional input weight. Skipping a zero
+    // here would turn an explicitly silent oscillator back up to unity.
+    if (!(coefs[COEF_CONST] > 0.0f)) return 0.0f;
     float result = 0;
     for (int i = 0; i < NUM_COMBO_COEFS; ++i)  {
         float coef = coefs[i];
@@ -2280,7 +2287,14 @@ float amp_combine_controls(float *controls, float *coefs) {
     //    log_amp = -2.0f + 2.0f * (log_amp + 2.0f);
     //}
     // Avoid powf with fxpt exp2
-    result = S2F(exp2_lut(F2S(result * 3.321928094887362f)));
+    float log_amp = result * 3.321928094887362f;
+#ifdef AMY_USE_FIXEDPOINT
+    // Bound the conversion and exp2's intermediate before either can overflow
+    // Q23. Levels below 2^-10 are already below AMP_THRESH_PLUS.
+    if (!(log_amp > -10.0f)) return 0.0f;
+    if (log_amp >= 8.0f) return 0x1.fffffep7f;
+#endif
+    result = S2F(exp2_lut(F2S(log_amp)));
     if (result <= AMP_THRESH_PLUS)  result = 0;
     return result;
 }
@@ -2440,7 +2454,7 @@ SAMPLE render_osc_wave(uint16_t osc, uint8_t core, SAMPLE* buf) {
                 if (new_max_val > max_val)  max_val = new_max_val;
             }
         }
-        if (synth[osc]->amp_coefs[COEF_CONST] != 0) {
+        if (synth[osc]->amp_coefs[COEF_CONST] != 0 || synth[osc]->wave == SILENT) {
                     // fill buf with next block_size of samples for specified osc.
             hold_and_modify(osc); // apply bp / mod
             // A PCM osc renders even at zero amplitude: its read position is time,

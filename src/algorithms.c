@@ -215,7 +215,7 @@ SAMPLE render_algo(SAMPLE* buf, uint16_t osc, uint8_t core) {
     //for (int i = 0; i < SCRATCH_BLOCKS_PER_CORE; ++i)
     //    zero(BUS_ONE + i * AMY_BLOCK_SIZE);
     
-    SAMPLE amp = SHIFTR(F2S(msynth[osc]->amp), 2);  // Arbitrarily divide FM voice output by 4 to make it more in line with other oscs.
+    SAMPLE amp = SHIFTR(amy_amp_to_sample(msynth[osc]->amp), 2);  // Arbitrarily divide FM voice output by 4 to make it more in line with other oscs.
     for(uint8_t op=0;op<MAX_ALGO_OPS;op++) {
         SAMPLE feedback_level = 0;
         SAMPLE mod_amp = F2S(1.0f);

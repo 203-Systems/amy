@@ -793,9 +793,11 @@ SAMPLE render_fm_sine(SAMPLE* buf, uint16_t osc, SAMPLE* mod, SAMPLE feedback_le
     }
     float freq = freq_of_logfreq(msynth[osc]->logfreq);
     _fm_sine_note_on(osc, freq);
-    PHASOR step = F2P(freq / (float)AMY_SAMPLE_RATE);  // cycles per sec / samples per sec -> cycles per sample
-    SAMPLE amp = MUL8_SS(F2S(msynth[osc]->amp), mod_amp);
-    SAMPLE last_amp = MUL8_SS(F2S(msynth[osc]->last_amp), mod_amp);
+    float phase_step = freq / (float)AMY_SAMPLE_RATE;
+    if (phase_step >= 1.0f) phase_step -= floorf(phase_step);
+    PHASOR step = F2P(phase_step);
+    SAMPLE amp = MUL8_SS(amy_amp_to_sample(msynth[osc]->amp), mod_amp);
+    SAMPLE last_amp = MUL8_SS(amy_amp_to_sample(msynth[osc]->last_amp), mod_amp);
     SAMPLE max_value;
     if (feedback_level > 0 && mod)
         synth[osc]->phase = render_lut_fm_fb(buf, synth[osc]->phase, step,
