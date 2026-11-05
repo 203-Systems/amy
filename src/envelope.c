@@ -47,7 +47,12 @@ AMY_IRAM_ATTR SAMPLE compute_mod_scale(uint16_t osc, uint16_t which_source) {
         // this descent, so recheck here -- the same reason render_osc_wave
         // rechecks before following chained_osc.
         if(source != osc && synth[source] != NULL) {  // belt-and-braces; assignment already rejects self as source
-            hold_and_modify(source);
+            // The source's control step feeds only its value, which compute_mod_value works out once
+            // a block. Asked again in the same block (a Juno voice asks five times for its LFO) the
+            // step has nothing new to give: run again, it cost as much as the first time (8 us on an
+            // ESP32-S3) and moved the source's portamento on by another step.
+            if (synth[source]->mod_value_clock != amy_global.total_blocks*AMY_BLOCK_SIZE)
+                hold_and_modify(source);
             return compute_mod_value(source);
         }
     }
