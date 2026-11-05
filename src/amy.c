@@ -1344,9 +1344,11 @@ void alloc_osc(int osc, uint8_t *max_num_breakpoints) {
     }
     int total_num_breakpoints = 0;
     for (int i=0; i < MAX_BREAKPOINT_SETS; ++i)  total_num_breakpoints += max_num_breakpoints[i];
-    uint8_t *ptr = malloc_caps(sizeof(struct synthinfo) + sizeof(struct mod_synthinfo)
-                               + total_num_breakpoints * (sizeof(float) + sizeof(uint32_t)),
-                               amy_global.config.ram_caps_oscs);
+    uint32_t osc_size = sizeof(struct synthinfo) + sizeof(struct mod_synthinfo)
+                        + total_num_breakpoints * (sizeof(float) + sizeof(uint32_t));
+    uint8_t *ptr = amy_global.config.amy_external_osc_alloc_hook != NULL
+        ? (uint8_t *)amy_global.config.amy_external_osc_alloc_hook(osc_size)
+        : (uint8_t *)malloc_caps(osc_size, amy_global.config.ram_caps_oscs);
     // On OOM leave the osc NULL; the voice goes silent instead of crashing.
     if (ptr == NULL) {
         amy_oom("alloc_osc: out of memory allocating osc %d\n", osc);
@@ -2946,8 +2948,10 @@ int next_delta_block = 0;
 #define DELTA_BLOCK_SIZE 2048
 
 struct delta *deltas_pool_alloc(int max_delta_pool_size, struct delta *tail) {
-    struct delta *new_pool = (struct delta *)malloc_caps(max_delta_pool_size * sizeof(struct delta),
-                                                         amy_global.config.ram_caps_synth);
+    uint32_t pool_size = max_delta_pool_size * sizeof(struct delta);
+    struct delta *new_pool = (struct delta *)(amy_global.config.amy_external_delta_alloc_hook != NULL
+        ? amy_global.config.amy_external_delta_alloc_hook(pool_size)
+        : malloc_caps(pool_size, amy_global.config.ram_caps_synth));
     if (new_pool == NULL) return NULL;
     struct delta *d = new_pool;
     // Link all the deltas together

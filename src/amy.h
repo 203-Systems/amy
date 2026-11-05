@@ -1065,6 +1065,14 @@ typedef struct  {
     // Called (from the render task -- set a flag and return quickly) when the
     // overload failsafe trips.  AMY has already silenced and reset itself.
     void (*amy_external_overload_hook)(float load);
+    // Optional allocators for the two kinds of memory a busy synth keeps asking for: one osc's
+    // state (alloc_osc, given back with free() when its voice is released) and one block of the
+    // event pool (deltas_add_pool_block, kept until amy_stop). NULL allocates with malloc_caps and
+    // ram_caps_oscs / ram_caps_synth. A host with fast and slow RAM places them by its own rule
+    // (fast RAM while enough of it stays free, say), which a fixed caps value cannot express.
+    // Either may return NULL: AMY treats that as out of memory.
+    void *(*amy_external_osc_alloc_hook)(uint32_t size);
+    void *(*amy_external_delta_alloc_hook)(uint32_t size);
 
     // CPU overload failsafe (see amy_overload_check).  When the smoothed render
     // load stays at/above overload_threshold for overload_ms, AMY resets itself

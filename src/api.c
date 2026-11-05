@@ -27,6 +27,8 @@ amy_config_t amy_default_config() {
 
     c.write_samples_fn = NULL;
     c.amy_external_render_hook = NULL;
+    c.amy_external_osc_alloc_hook = NULL;
+    c.amy_external_delta_alloc_hook = NULL;
     c.amy_external_bus_postprocess_hook = NULL;
     c.amy_external_coef_hook = NULL;
     c.amy_external_cv_output_hook = NULL;
