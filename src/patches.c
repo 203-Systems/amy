@@ -197,23 +197,15 @@ void add_deltas_to_queue_with_baseosc(struct delta *d, int base_osc, uint16_t os
 void snprintcodefloat(char *s, size_t max_len, char *code, float val) {
     // Skip trailing zeros (and decimal point) when printing a float.
     float testval = val;
-    char fmt[7]; // = "%s%.0f";
-    fmt[0] = '%';
-    fmt[1] = 's';
-    fmt[2] = '%';
-    fmt[3] = '.';
-    fmt[4] = '0';
-    fmt[5] = 'f';
-    fmt[6] = 0;
-    for (int dp = 0; dp < 3; ++dp) {
-        if (testval == roundf(testval)) {
-            snprintf(s, max_len, fmt, code, val);
-            return;
-        }
+    int dp = 0;
+    while (dp < 3 && testval != roundf(testval)) {
         testval *= 10.0f;
-        ++fmt[4];  // increase the DP digit
+        ++dp;
     }
-    snprintf(s, max_len, fmt, code, val);
+    size_t code_len = strlen(code);
+    if (code_len >= max_len) code_len = max_len ? max_len - 1 : 0;
+    if (max_len) memcpy(s, code, code_len);
+    amy_snprint_float(s + code_len, max_len - code_len, val, dp, false);
 }
 
 void snprintfloat3dp(char *s, size_t max_len, float val) {
@@ -1655,6 +1647,18 @@ void patches_load_patch(amy_event *e) {
             // Built-in patch. The table has reserved (NULL) gaps -- e.g. 259-383
             // before the drum kit bank at 384 -- and ends well before the user
             // range, so check both before dereferencing.
+#ifdef AMY_ONLY_PATCH
+            // A build with one built-in patch, for targets short of flash: the
+            // table is only ever read at this constant index, so the optimizer
+            // (-O1 and up) drops the other patches' text (~125 KB).
+            if (patch_number != AMY_ONLY_PATCH) {
+                fprintf(stderr, "patch_number %" PRIu16 " is not built in (AMY_ONLY_PATCH=%d), ignored\n",
+                        patch_number, AMY_ONLY_PATCH);
+                goto done;
+            }
+            message = (char*)patch_commands[AMY_ONLY_PATCH];
+            oscs_per_voice = patch_oscs[AMY_ONLY_PATCH];
+#else
             if (patch_number >= _PATCHES_NUM_BUILTIN || patch_commands[patch_number] == NULL) {
                 fprintf(stderr, "patch_number %" PRIu16 " is not a defined built-in patch (synth %" PRId32 "), ignored\n",
                         patch_number, (int32_t)e->synth);
@@ -1662,6 +1666,7 @@ void patches_load_patch(amy_event *e) {
             }
             message = (char*)patch_commands[patch_number];
             oscs_per_voice = patch_oscs[patch_number];
+#endif
         } else {
             // User-defined patch.  patch_number can be out of range here (an
             // unset instrument patch reads back as UNSET/0xffff, and a wire

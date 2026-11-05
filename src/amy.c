@@ -81,7 +81,18 @@ void amy_profiles_print() {}
 
 
 // Use the tiny built-in PCM set by default across platforms.
-#ifdef GAMMA9001
+#if defined(AMY_NO_BUILTIN_PCM)
+// No built-in samples, for targets short of flash (saves ~100 KB, ~265 KB
+// with AMY_WAVETABLE). With pcm_samples 0, AMY skips
+// pcm_init and doesn't render PCM oscillators at all.
+#define PCM_AMY_SAMPLE_RATE 22050
+const int16_t pcm[1] PROGMEM = {0};
+const uint16_t pcm_samples = 0;
+const uint16_t pcm_wavetable_base = 0;
+const uint16_t pcm_wavetable_samples = 0;
+const uint32_t pcm_wavetable_len = 0;
+const pcm_map_t pcm_map[1] PROGMEM = {{0, 0, 0, 0, 0}};
+#elif defined(GAMMA9001)
 // The Gamma9001 builds (Tulip, AMYboard, web) bake the full TR-808 bank as
 // their ROM set; the other Gamma9001 banks stream from gamma9001_pcm (pcm.c).
 #include "pcm_gamma808.h"
@@ -1501,10 +1512,11 @@ int8_t oscs_init() {
     return 0;
 }
 
+#ifdef AMY_DEBUG
 void fprint_combo_coefs(char *name, const float *coefs) {
     fprintf(stderr, "  %s:", name);
     for (int i=0; i < NUM_COMBO_COEFS; ++i) {
-        fprintf(stderr, " %.3f", coefs[i]);
+        fprintf(stderr, " %.3f", (double)coefs[i]);
     }
     fprintf(stderr, "\n");
 }
@@ -1519,7 +1531,7 @@ void print_osc_debug(uint16_t i /* osc */, bool show_eg) {
     }
     fprintf(stderr,"osc %" PRIu16 ": status %" PRIu8 " role %" PRIu8 " wave %" PRIu16 " mode %" PRIu16 " mod_source %" PRIu16 ",%" PRIu16 " velocity %f logratio %f feedback %f filtype %" PRIu8 " resonance %f portamento_alpha %f chained %" PRIu16 " algo %" PRIu8 " algo_source %" PRIu16 ",%" PRIu16 ",%" PRIu16 ",%" PRIu16 ",%" PRIu16 ",%" PRIu16 "  \n",
             i, synth[i]->status, synth[i]->role, synth[i]->wave, synth[i]->mode, synth[i]->mod_source[0], synth[i]->mod_source[1],
-            synth[i]->velocity, synth[i]->logratio, synth[i]->feedback, synth[i]->filter_type, synth[i]->resonance, synth[i]->portamento_alpha, synth[i]->chained_osc,
+            (double)synth[i]->velocity, (double)synth[i]->logratio, (double)synth[i]->feedback, synth[i]->filter_type, (double)synth[i]->resonance, (double)synth[i]->portamento_alpha, synth[i]->chained_osc,
             is_algo ? synth[i]->algorithm : 0,
             algo_src[0], algo_src[1], algo_src[2], algo_src[3], algo_src[4], algo_src[5] );
     fprint_combo_coefs("amp_coefs", synth[i]->amp_coefs);
@@ -1534,11 +1546,11 @@ void print_osc_debug(uint16_t i /* osc */, bool show_eg) {
         for(uint8_t j=0;j<MAX_BREAKPOINT_SETS;j++) {
             fprintf(stderr,"  eg%" PRIu8 " (type %" PRIu8 "): ", j, synth[i]->eg_type[j]);
             for(uint8_t k=0;k<synth[i]->max_num_breakpoints[j];k++) {
-                fprintf(stderr,"%" PRIi32 ": %f ", synth[i]->breakpoint_times[j][k], synth[i]->breakpoint_values[j][k]);
+                fprintf(stderr,"%" PRIi32 ": %f ", synth[i]->breakpoint_times[j][k], (double)synth[i]->breakpoint_values[j][k]);
             }
             fprintf(stderr,"\n");
         }
-        fprintf(stderr,"mod osc %" PRIu16 ": amp: %f, logfreq %f duty %f filter_logfreq %f resonance %f fb/bw %f pan %f state %" PRIu16 "\n", i, msynth[i]->amp, msynth[i]->logfreq, msynth[i]->duty, msynth[i]->filter_logfreq, msynth[i]->resonance, msynth[i]->feedback, msynth[i]->pan, msynth[i]->state);
+        fprintf(stderr,"mod osc %" PRIu16 ": amp: %f, logfreq %f duty %f filter_logfreq %f resonance %f fb/bw %f pan %f state %" PRIu16 "\n", i, (double)msynth[i]->amp, (double)msynth[i]->logfreq, (double)msynth[i]->duty, (double)msynth[i]->filter_logfreq, (double)msynth[i]->resonance, (double)msynth[i]->feedback, (double)msynth[i]->pan, msynth[i]->state);
     }
 }
 
@@ -1556,7 +1568,7 @@ void show_debug(uint8_t type) {
         uint16_t q = amy_global.delta_qsize;
         if(q > 25) q = 25;
         for(uint16_t i=0;i<q;i++) {
-            fprintf(stderr,"%" PRIu16 " time %" PRIu32 " osc %" PRIu16 " param %d - %f %" PRIu32 "\n", i, ptr->time, ptr->osc, ptr->param, ptr->data.f, ptr->data.i);
+            fprintf(stderr,"%" PRIu16 " time %" PRIu32 " osc %" PRIu16 " param %d - %f %" PRIu32 "\n", i, ptr->time, ptr->osc, ptr->param, (double)ptr->data.f, ptr->data.i);
             ptr = ptr->next;
         }
         fprintf(stderr, "deltas_queue len %" PRIi32 ", free len %" PRIi32 "\n", delta_list_len(amy_global.delta_queue), delta_num_free());
@@ -1569,8 +1581,8 @@ void show_debug(uint8_t type) {
         // max_buses is, which reads past the end of a build with fewer.
         fprintf(stderr, "global: volume");
         for (int bus = 0; bus < amy_global.config.max_buses; ++bus)
-            fprintf(stderr, " %.3f", amy_global.volume[bus]);
-        fprintf(stderr, " bend %f bus 0 eq: %f %f %f \n", amy_global.pitch_bend, S2F(amy_global.bus[0]->eq.eq[0]), S2F(amy_global.bus[0]->eq.eq[1]), S2F(amy_global.bus[0]->eq.eq[2]));
+            fprintf(stderr, " %.3f", (double)amy_global.volume[bus]);
+        fprintf(stderr, " bend %f bus 0 eq: %f %f %f \n", (double)amy_global.pitch_bend, (double)S2F(amy_global.bus[0]->eq.eq[0]), (double)S2F(amy_global.bus[0]->eq.eq[1]), (double)S2F(amy_global.bus[0]->eq.eq[2]));
         for(uint16_t i=0;i<10 /* AMY_OSCS */;i++) {
             print_osc_debug(i, (type > 3) /* show_eg */);
         }
@@ -1601,6 +1613,16 @@ void show_debug(uint8_t type) {
         fprintf(stderr, "\n");
     }
 }
+#else
+// Without AMY_DEBUG the debug dumps are stubs. They print floats, and a float
+// passed to printf is a double: on single-precision-FPU targets that links
+// software-double code, and needs a C library whose printf has %f.
+void print_osc_debug(uint16_t i, bool show_eg) { (void)i; (void)show_eg; }
+void show_debug(uint8_t type) {
+    (void)type;
+    fprintf(stderr, "show_debug: AMY was built without AMY_DEBUG\n");
+}
+#endif // AMY_DEBUG
 
 void oscs_deinit() {
     cv_from_osc_deinit();
@@ -2082,11 +2104,15 @@ void play_delta(struct delta *d) {
     if(d->param == TEMPO) {
         // Reject zero/negative/NaN tempo: sequencer_recompute divides by it.
         if (d->data.f > 0) { amy_global.tempo = d->data.f; sequencer_recompute(); }
-        else fprintf(stderr, "bad tempo %f ignored\n", d->data.f);
+        else {
+            char t[24];
+            amy_snprint_float(t, sizeof(t), d->data.f, 6, false);
+            fprintf(stderr, "bad tempo %s ignored\n", t);
+        }
     }
-    if(d->param == EQ_L) amy_global.bus[bus]->eq.eq[0] = F2S(powf(10, d->data.f / 20.0));
-    if(d->param == EQ_M) amy_global.bus[bus]->eq.eq[1] = F2S(powf(10, d->data.f / 20.0));
-    if(d->param == EQ_H) amy_global.bus[bus]->eq.eq[2] = F2S(powf(10, d->data.f / 20.0));
+    if(d->param == EQ_L) amy_global.bus[bus]->eq.eq[0] = F2S(powf(10, d->data.f / 20.0f));
+    if(d->param == EQ_M) amy_global.bus[bus]->eq.eq[1] = F2S(powf(10, d->data.f / 20.0f));
+    if(d->param == EQ_H) amy_global.bus[bus]->eq.eq[2] = F2S(powf(10, d->data.f / 20.0f));
     if(d->param == EQ_L || d->param == EQ_M || d->param == EQ_H) parametric_eq_update(bus);
     if(d->param == ECHO_LEVEL) config_echo(bus, d->data.f, AMY_UNSET_FLOAT, AMY_UNSET_FLOAT, AMY_UNSET_FLOAT, AMY_UNSET_FLOAT);
     if(d->param == ECHO_DELAY_MS) config_echo(bus, AMY_UNSET_FLOAT, d->data.f, AMY_UNSET_FLOAT, AMY_UNSET_FLOAT, AMY_UNSET_FLOAT);
@@ -2276,7 +2302,7 @@ float amp_combine_controls(float *controls, float *coefs) {
         float val = controls[i];
         if (i == COEF_CONST)  {val = coef; coef = 1.0f;}   // coef[CONST] is always 1.0f, so swap them.  We're going to map the val.
         if (i != COEF_MOD0 && i != COEF_MOD1) {
-            val = map_60dB_to_01f(MAX(0, val)) - 1.0;    // const, vel, eg0, eg1 get log-compressed.
+            val = map_60dB_to_01f(MAX(0, val)) - 1.0f;    // const, vel, eg0, eg1 get log-compressed.
             // make 0 mean "no amp" and 1 mean "regular (full) amp".
         }
         result += coef * val;
@@ -2605,11 +2631,13 @@ AMY_IRAM_ATTR void amy_render(uint16_t start, uint16_t end, uint8_t core) {
         }
     }
 
+#ifdef AMY_DEBUG  // debug_flag is set by show_debug
     if (amy_global.debug_flag) {
         amy_global.debug_flag = 0;  // Only do this once each time debug_flag is set.
         SAMPLE smax = scan_max(fbl[core][0 /* bus */], AMY_BLOCK_SIZE);
-        fprintf(stderr, "time %" PRIu32 " core %d bus 0 max_max=%.3f post-eq max=%.3f\n", amy_global.total_samples, core, S2F(max_max), S2F(smax));
+        fprintf(stderr, "time %" PRIu32 " core %d bus 0 max_max=%.3f post-eq max=%.3f\n", amy_global.total_samples, core, (double)S2F(max_max), (double)S2F(smax));
     }
+#endif
 
     AMY_PROFILE_STOP(AMY_RENDER)
 
@@ -2838,9 +2866,8 @@ int16_t * amy_fill_buffer() {
             int16_t sample;
 
             // TODO -- the esp stuff here could sit outside of AMY
-            // For some reason, have to drop a bit to stop hard wrapping on esp?
-            // Not applied on ESP32-P4: see https://github.com/shorepine/amy/issues/1169
-#if (defined(ESP_PLATFORM) && !defined(CONFIG_IDF_TARGET_ESP32P4)) || defined(__IMXRT1062__)
+            // Teensy 4.x: drop a bit to stop hard wrapping through AudioOutputPT8211 (#425); the cause there is not known.
+#if defined(__IMXRT1062__)
             uintval >>= 1;
 #endif
             if (positive) {
