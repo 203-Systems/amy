@@ -163,19 +163,29 @@ const int16_t *pcm_get_memory_preset(uint16_t preset_number, uint32_t *frames, u
 
 // Hann window for the granular time-stretcher, Q15.  At 50% overlap Hann
 // windows sum to exactly 1.0 (COLA), so two overlapping grains reconstruct
-// unity gain.  Filled once at pcm_init (float trig at init time only; the
-// render path is all fixed point).
-static int16_t stretch_win[PCM_STRETCH_GRAIN];
+// unity gain.  Allocated and filled at the first stretched note (float trig
+// then only; the render path is all fixed point): a host that never
+// stretches keeps the RAM, which on an MCU is scarce internal RAM.
+static int16_t *stretch_win = NULL;
 
-void pcm_init() {
-    memorypcm_ll_start = NULL;
+static bool pcm_stretch_window_ready(void) {
+    if (stretch_win != NULL) return true;
+    stretch_win = (int16_t *)malloc_caps(sizeof(int16_t) * PCM_STRETCH_GRAIN, amy_global.config.ram_caps_oscs);
+    if (stretch_win == NULL) return false;
     for (int i = 0; i < PCM_STRETCH_GRAIN; ++i) {
         float w = 0.5f * (1.0f - cosf(2.0f * (float)M_PI * (float)i / (float)PCM_STRETCH_GRAIN));
         stretch_win[i] = (int16_t)(w * 32767.0f);
     }
+    return true;
+}
+
+void pcm_init() {
+    memorypcm_ll_start = NULL;
 }
 void pcm_deinit() {
     pcm_unload_all_presets();
+    free(stretch_win);
+    stretch_win = NULL;
 }
 
 // How many bits used for fractional part of PCM table index.
@@ -297,6 +307,10 @@ static inline bool pcm_stretch_active(uint16_t osc) {
 // The stretcher is allocated at the osc's first fit note-on and kept (see
 // osc_release_allocs()).  Returns false on OOM: the note plays unstretched.
 static bool pcm_stretch_note_on(uint16_t osc, memorypcm_preset_t *preset) {
+    if (!pcm_stretch_window_ready()) {
+        amy_oom("pcm_stretch_note_on: out of memory for the stretch window\n");
+        return false;
+    }
     pcm_stretch_t *st = synth[osc]->stretch;
     if (st == NULL) {
         st = (pcm_stretch_t *)malloc_caps(sizeof(pcm_stretch_t), amy_global.config.ram_caps_oscs);
@@ -457,7 +471,9 @@ static void pcm_stretch_spawn(pcm_stretch_t *st, memorypcm_preset_t *preset, uin
     st->in_pos_q16 += st->hop_advance_q16;
 }
 
-static SAMPLE render_pcm_stretch(SAMPLE *buf, uint16_t osc, memorypcm_preset_t *preset) {
+// Not inlined: render_pcm, which every PCM voice runs each block, stays small
+// for hosts that place it in fast memory.
+AMY_NOINLINE static SAMPLE render_pcm_stretch(SAMPLE *buf, uint16_t osc, memorypcm_preset_t *preset) {
     pcm_stretch_t *st = synth[osc]->stretch;  // pcm_stretch_active() checked it
     // A tempo change has to reach notes that are ALREADY sounding: fit= locks
     // a note to a number of ticks, and a tick just got longer or shorter, so
