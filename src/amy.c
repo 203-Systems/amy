@@ -2941,11 +2941,18 @@ void amy_reset_sysclock() {
 
 struct delta *free_deltas_pool = NULL;
 
+// The pool grows by DELTA_BLOCK_SIZE deltas at a time, up to MAX_DELTA_BLOCKS blocks. A build can
+// set both (-D): smaller blocks reserve less RAM up front for a synth that keeps few deltas live,
+// more of them keep the same capacity (16 x 2048 = 128 x 256).
+#ifndef MAX_DELTA_BLOCKS
 #define MAX_DELTA_BLOCKS 16
+#endif
 struct delta *delta_blocks[MAX_DELTA_BLOCKS];
 int next_delta_block = 0;
 
+#ifndef DELTA_BLOCK_SIZE
 #define DELTA_BLOCK_SIZE 2048
+#endif
 
 struct delta *deltas_pool_alloc(int max_delta_pool_size, struct delta *tail) {
     uint32_t pool_size = max_delta_pool_size * sizeof(struct delta);
