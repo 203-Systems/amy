@@ -214,7 +214,9 @@ extern void amy_set_gamma9001_pcm(const int16_t * data);
 #include <esp_heap_caps.h>
 #endif
 
-#if defined(ESP_PLATFORM) && !defined(TULIP)
+// A build that places the hot path itself (a linker fragment in a build without LTO, measured
+// against its own internal RAM budget) defines AMY_NO_IRAM_PLACEMENT and leaves both empty.
+#if defined(ESP_PLATFORM) && !defined(TULIP) && !defined(AMY_NO_IRAM_PLACEMENT)
 // From github.com/rt-rtos/S3-Amysynth: Place the render hot path in internal
 // IRAM. Use IRAM_ATTR (per-symbol) rather than a linker fragment because this
 // build uses GCC LTO: .text.* section names are rewritten in ltrans, so
