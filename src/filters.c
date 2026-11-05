@@ -933,9 +933,12 @@ SAMPLE block_denorm(SAMPLE* block, int len, int bits) {
 // resonance, where the 15-bit operands did.
 //
 // Rounded, not floored: near the lowest cutoffs the poles sit next to 1 and the recursion builds a
-// floor's bias up into an offset many times the signal's error.
+// floor's bias up into an offset many times the signal's error. Adding half before the shift carries
+// into the result exactly when the product's bit 22 is set, so that bit is added instead: the same
+// value without a 64-bit add, whose carry took a compare and a branch on Xtensa.
 static inline SAMPLE lpf24_mul(SAMPLE a, SAMPLE b) {
-    return (SAMPLE)(((int64_t)a * (int64_t)b + ((int64_t)1 << (S_FRAC_BITS - 1))) >> S_FRAC_BITS);
+    const int64_t product = (int64_t)a * (int64_t)b;
+    return (SAMPLE)(product >> S_FRAC_BITS) + (SAMPLE)(((uint32_t)product >> (S_FRAC_BITS - 1)) & 1u);
 }
 
 AMY_IRAM_ATTR static SAMPLE biquad_lpf24_exact(const SAMPLE *input, SAMPLE *output, int len, const SAMPLE *coef, SAMPLE *w) {
