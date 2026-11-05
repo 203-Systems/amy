@@ -1313,6 +1313,10 @@ osc_dist_t *osc_dist_alloc(uint16_t osc);
 extern const osc_dist_t osc_dist_defaults;
 void patches_init(int max_memory_patches);
 void patches_deinit();
+// A built-in patch's command text, NULL for a number that is not built in. A host that loads the
+// same ROM patch into many voices can store it once as a memory patch (patches_store_patch) and
+// load that instead: a memory patch is parsed once, a ROM patch once per voice it builds.
+const char *amy_builtin_patch_command(uint16_t patch_number);
 void parse_algo_source(char* message, int16_t *vals);
 void hold_and_modify(uint16_t osc) ;
 void amy_execute_deltas();

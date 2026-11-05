@@ -23,6 +23,14 @@ uint16_t next_user_patch_index = 0;
 uint16_t * osc_to_voice = NULL;
 uint16_t *voice_to_base_osc = NULL;
 
+const char *amy_builtin_patch_command(uint16_t patch_number) {
+#ifdef AMY_ONLY_PATCH
+    return patch_number == AMY_ONLY_PATCH ? patch_commands[AMY_ONLY_PATCH] : NULL;
+#else
+    return patch_number < _PATCHES_NUM_BUILTIN ? patch_commands[patch_number] : NULL;
+#endif
+}
+
 void patches_deinit() {
     free(memory_patch_deltas);  // patches_init()'s one block; the others point into it
     memory_patch_deltas = NULL;
