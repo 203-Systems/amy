@@ -923,6 +923,60 @@ SAMPLE block_denorm(SAMPLE* block, int len, int bits) {
     return block_norm(block, len, -bits);
 }
 
+#ifdef AMY_USE_FIXEDPOINT
+// FILTER_LPF24 in fixed point: the same two biquads with zeros at (1, 2, 1) in the split feedback
+// form (a1 = -2 + e, a2 = 1 - f) as dsps_biquad_f32_ansi_split_fb_twice_fixedzeros, but each product
+// exact in 64 bits instead of top16SMUL's 16-bit operands and headroom shifts. On an ESP32-S3 that
+// form took some 167 instructions a sample with branches and stack spills, about 290 us per voice
+// and block, the dearest part of a Juno voice. Against a double-precision reference this is as close
+// at the lowest cutoffs (20-90 Hz) and far closer above them, and it does not run away at high
+// resonance, where the 15-bit operands did.
+//
+// Rounded, not floored: near the lowest cutoffs the poles sit next to 1 and the recursion builds a
+// floor's bias up into an offset many times the signal's error.
+static inline SAMPLE lpf24_mul(SAMPLE a, SAMPLE b) {
+    return (SAMPLE)(((int64_t)a * (int64_t)b + ((int64_t)1 << (S_FRAC_BITS - 1))) >> S_FRAC_BITS);
+}
+
+AMY_IRAM_ATTR static SAMPLE biquad_lpf24_exact(const SAMPLE *input, SAMPLE *output, int len, const SAMPLE *coef, SAMPLE *w) {
+    AMY_PROFILE_START(DSPS_BIQUAD_F32_ANSI_SPLIT_FB_TWICE)
+    SAMPLE x1 = w[0];
+    SAMPLE x2 = w[1];
+    SAMPLE y1 = w[2];
+    SAMPLE y2 = w[3];
+    SAMPLE v1 = w[4];
+    SAMPLE v2 = w[5];
+    const SAMPLE a = coef[0];
+    const SAMPLE e = F2S(2.0f) + coef[3];  // so coef[3] = -2 + e
+    const SAMPLE f = F2S(1.0f) - coef[4];  // so coef[4] = 1 - f
+    SAMPLE max_out = 0;
+    for (int i = 0; i < len; i++) {
+        const SAMPLE x0 = lpf24_mul(a, input[i]);
+        const SAMPLE w0 = x0 + SHIFTL(x1, 1) + x2;
+        const SAMPLE v0 = w0 + SHIFTL(v1, 1) - v2 - lpf24_mul(e, v1) + lpf24_mul(f, v2);
+        const SAMPLE u0 = lpf24_mul(a, v0 + SHIFTL(v1, 1) + v2);
+        const SAMPLE y0 = u0 + SHIFTL(y1, 1) - y2 - lpf24_mul(e, y1) + lpf24_mul(f, y2);
+        x2 = x1;
+        x1 = x0;
+        v2 = v1;
+        v1 = v0;
+        y2 = y1;
+        y1 = y0;
+        output[i] = y0;
+        const SAMPLE magnitude = y0 < 0 ? -y0 : y0;
+        if (magnitude > max_out) max_out = magnitude;
+    }
+    w[0] = x1;
+    w[1] = x2;
+    w[2] = y1;
+    w[3] = y2;
+    w[4] = v1;
+    w[5] = v2;
+    AMY_PROFILE_STOP(DSPS_BIQUAD_F32_ANSI_SPLIT_FB_TWICE)
+    return max_out;
+}
+#endif
+
 AMY_IRAM_ATTR SAMPLE filter_process(SAMPLE * block, uint16_t osc, SAMPLE max_val) {
 
     SAMPLE coeffs[5];
@@ -1001,7 +1055,11 @@ AMY_IRAM_ATTR SAMPLE filter_process(SAMPLE * block, uint16_t osc, SAMPLE max_val
     //printf("time %f max_val %f filtmax %f lastfiltnormbits %d filtnormbits %d normbits %d\n", amy_global.total_blocks*AMY_BLOCK_SIZE / (float)AMY_SAMPLE_RATE, S2F(max_val), S2F(filtmax), synth[osc]->last_filt_norm_bits, filtnormbits, normbits);
     if(synth[osc]->filter_type==FILTER_LPF24) {
         // 24 dB/oct by running the same filter twice.
+#ifdef AMY_USE_FIXEDPOINT
+        max_val = biquad_lpf24_exact(block, block, AMY_BLOCK_SIZE, coeffs, synth[osc]->filter_delay);
+#else
         max_val = dsps_biquad_f32_ansi_split_fb_twice_fixedzeros(block, block, AMY_BLOCK_SIZE, coeffs, synth[osc]->filter_delay, max_val);
+#endif
         //} else if(synth[osc]->filter_type==FILTER_LPF) {
         // Optimized block-floating point 12 dB/oct LPF
         //max_val = dsps_biquad_f32_ansi_split_fb_once(block, block, AMY_BLOCK_SIZE, coeffs, synth[osc]->filter_delay, max_val);
