@@ -964,6 +964,38 @@ int16_t * pcm_load(uint16_t preset_number, uint32_t length, uint32_t samplerate,
     return memory_preset->sample_ram;
 }
 
+// Register frames the caller owns as preset # without copying them: samples kept in flash (a
+// firmware's own drum banks) or in the caller's memory. The frames (length * channels interleaved
+// int16) must stay valid and unchanged until the preset is unloaded; unloading frees only AMY's small
+// record of them. Same arguments and loop handling as pcm_load. Returns 1, or 0 when AMY has no RAM
+// left for the record.
+int pcm_load_external(uint16_t preset_number, const int16_t *frames, uint32_t length, uint32_t samplerate, uint8_t channels, float midinote, uint32_t loopstart, uint32_t loopend) {
+    pcm_unload_preset(preset_number);
+    if (frames == NULL || length == 0 || channels == 0) return 0;
+    memorypcm_ll_t *new_preset_pointer = malloc_caps(sizeof(memorypcm_ll_t) + sizeof(memorypcm_preset_t),
+                                                     amy_global.config.ram_caps_sample);
+    if (new_preset_pointer == NULL) {
+        fprintf(stderr, "No RAM left for sample load\n");
+        return 0;
+    }
+    memorypcm_preset_t *memory_preset = (memorypcm_preset_t *)(((uint8_t *)new_preset_pointer) + sizeof(memorypcm_ll_t));
+    memset(memory_preset, 0, sizeof(*memory_preset));
+    memory_preset->samplerate = samplerate;
+    memory_preset->log2sr = log2f((float)samplerate / ZERO_LOGFREQ_IN_HZ);
+    memory_preset->midinote = midinote;
+    memory_preset->loopstart = loopstart;
+    memory_preset->length = length;
+    memory_preset->channels = channels;
+    memory_preset->type = AMY_PCM_TYPE_MEMORY;
+    memory_preset->sample_ram = (int16_t *)frames;
+    memory_preset->loopend = loopend == 0 ? length - 1 : loopend;
+    new_preset_pointer->preset_number = preset_number;
+    new_preset_pointer->preset = memory_preset;
+    new_preset_pointer->next = memorypcm_ll_start;
+    memorypcm_ll_start = new_preset_pointer;
+    return 1;
+}
+
 void pcm_unload_preset(uint16_t preset_number) {
     // run through the LL looking for the preset
     memorypcm_ll_t **preset_pointer = &memorypcm_ll_start;

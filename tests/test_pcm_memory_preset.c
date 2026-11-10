@@ -62,6 +62,50 @@ static void test_no_rom_fallback(void) {
     CHECK(pcm_get_memory_preset(301, NULL, NULL, NULL, NULL) == NULL, "unloaded preset -> NULL");
 }
 
+// Renders `blocks` blocks of osc 0 playing preset # at its own pitch into out (mono, the first channel).
+static void render_preset(int preset, int16_t *out, int blocks) {
+    char msg[64];
+    amy_add_message("v0l0");
+    for (int i = 0; i < 2; ++i) amy_simple_fill_buffer();
+    snprintf(msg, sizeof msg, "v0w%dp%dl1", PCM, preset);
+    amy_add_message(msg);
+    for (int b = 0; b < blocks; ++b) {
+        int16_t *buf = amy_simple_fill_buffer();
+        for (int i = 0; i < AMY_BLOCK_SIZE; ++i) out[b * AMY_BLOCK_SIZE + i] = buf[i * AMY_NCHANS];
+    }
+}
+
+static int16_t external_frames[3000];
+
+static void test_external(void) {
+    printf("pcm_load_external plays the caller's frames in place\n");
+    for (int i = 0; i < 3000; ++i) external_frames[i] = (int16_t)((i % 50) * 400 - 10000);
+    CHECK(pcm_load_external(303, external_frames, 3000, 22050, 1, 60, 0, 0) == 1, "registered");
+    uint32_t frames = 0, sr = 0; uint8_t ch = 0;
+    const int16_t *got = pcm_get_memory_preset(303, &frames, &ch, &sr, NULL);
+    CHECK(got == external_frames, "the preset is the caller's frames, not a copy");
+    CHECK(frames == 3000 && ch == 1 && sr == 22050, "shape kept (%u frames, %u ch, %u Hz)", (unsigned)frames, ch, (unsigned)sr);
+    int16_t *copy = pcm_load(304, 3000, 22050, 1, 60, 0, 0);
+    memcpy(copy, external_frames, sizeof external_frames);
+    enum { kBlocks = 8 };
+    static int16_t a[kBlocks * AMY_BLOCK_SIZE], b[kBlocks * AMY_BLOCK_SIZE];
+    render_preset(303, a, kBlocks);
+    render_preset(304, b, kBlocks);
+    int loud = 0;
+    for (int i = 0; i < kBlocks * AMY_BLOCK_SIZE; ++i) if (a[i] > 100 || a[i] < -100) loud = 1;
+    int peak = 0; for (int i = 0; i < kBlocks * AMY_BLOCK_SIZE; ++i) { int v = a[i] < 0 ? -a[i] : a[i]; if (v > peak) peak = v; }
+    CHECK(loud, "it sounds (peak %d)", peak);
+    CHECK(memcmp(a, b, sizeof a) == 0, "sounds exactly as the same frames loaded with pcm_load");
+    amy_add_message("v0l0");
+    amy_simple_fill_buffer();
+    pcm_unload_preset(303);
+    pcm_unload_preset(304);
+    CHECK(pcm_get_memory_preset(303, NULL, NULL, NULL, NULL) == NULL, "unloaded");
+    CHECK(external_frames[2999] == (int16_t)((2999 % 50) * 400 - 10000), "the caller's frames are left alone");
+    CHECK(pcm_load_external(305, NULL, 3000, 22050, 1, 60, 0, 0) == 0, "no frames: refused");
+    CHECK(pcm_get_memory_preset(305, NULL, NULL, NULL, NULL) == NULL, "nothing registered for it");
+}
+
 // AMY calls these; the test binary has to provide them.
 void delay_ms(uint32_t ms) { (void)ms; }
 
@@ -74,6 +118,7 @@ int main(void) {
     test_mono_load();
     test_stereo_record();
     test_no_rom_fallback();
+    test_external();
 
     if (failures) { printf("%d FAILURES\n", failures); return 1; }
     printf("all ok\n");

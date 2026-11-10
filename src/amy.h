@@ -1636,6 +1636,8 @@ extern void pulse_mod_trigger(uint16_t osc);
 extern void pcm_mod_trigger(uint16_t osc);
 extern void custom_mod_trigger(uint16_t osc);
 extern int16_t * pcm_load(uint16_t preset_number, uint32_t length, uint32_t samplerate, uint8_t channels, float midinote, uint32_t loopstart, uint32_t loopend);
+// Like pcm_load, but the preset plays the caller's frames where they are (no copy): they must outlive the preset.
+extern int pcm_load_external(uint16_t preset_number, const int16_t *frames, uint32_t length, uint32_t samplerate, uint8_t channels, float midinote, uint32_t loopstart, uint32_t loopend);
 extern const int16_t *pcm_get_sample_ram_for_preset(uint16_t preset_number, uint32_t *length);
 extern const int16_t *pcm_get_memory_preset(uint16_t preset_number, uint32_t *frames, uint8_t *channels, uint32_t *samplerate, float *midinote);
 extern int pcm_load_file();
